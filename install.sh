@@ -14,13 +14,13 @@ stop_sevice() {
 }
 
 cleanup_leagacy() {
-  sudo apt remove --purge -y "python3-pil"
+  sudo apt remove --purge "python3-pil python3-opencv"
 }
 
 install_packages() {
-  PKGLIST="python3-cryptography python3-gevent python3-opencv"
+  PKGLIST="python3-cryptography python3-gevent"
   sudo apt-get update
-  sudo apt-get install --yes ${PKGLIST}
+  sudo apt install -y "${PKGLIST}"
 }
 
 create_virtualenv() {

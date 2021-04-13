@@ -4,6 +4,7 @@ from logging.handlers import RotatingFileHandler
 import os
 import sys
 
+import numpy
 from numpy import random
 
 from telegram import Update
@@ -23,10 +24,10 @@ import urllib.request
 from urllib.request import urlopen
 from PIL import Image
 from io import BytesIO
-import cv2
 from pyhocon import ConfigFactory
 import emoji
 import threading
+import moviepy.editor as mpy
 
 # Enable logging
 logging.basicConfig(
@@ -128,8 +129,33 @@ def take_photo() -> BytesIO:
     return bio
 
 
-def process_frame(frame, width, height) -> Image:
-    image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+def make_frame(t):
+    url = f"http://{cameraHost}/?action=snapshot"
+    img = Image.open(urlopen(url))
+    if flipVertically:
+        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    if flipHorisontally:
+        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    return numpy.array(img)
+
+
+def get_video(update: Update, context: CallbackContext) -> None:
+    filepath = os.path.join('/tmp/', 'video.mp4')
+    clip = mpy.VideoClip(make_frame, duration=gifDuration * 2)
+    clip.write_videofile(filepath, fps=25, threads=1)  # Todo: check fps paam!
+    bio = BytesIO()
+    bio.name = 'myvideo.mp4'
+    with open(filepath, 'rb') as fh:
+        bio.write(fh.read())
+    os.remove(filepath)
+    bio.seek(0)
+    update.message.reply_video(video=bio)
+
+
+def get_frame() -> Image:
+    url = f"http://{cameraHost}/?action=snapshot"
+    image = Image.open(urlopen(url))
+    width, height = image.size
     if flipVertically:
         image = image.transpose(Image.FLIP_TOP_BOTTOM)
     if flipHorisontally:
@@ -144,25 +170,15 @@ def get_photo(update: Update, context: CallbackContext) -> None:
 
 
 def get_gif(update: Update, context: CallbackContext) -> None:
-    gif = []
-    url = f"http://{cameraHost}/?action=stream"
-    cap = cv2.VideoCapture(url)
-    success, image = cap.read()
-    height, width, channels = image.shape
-    gif.append(process_frame(image, width, height))
-
+    gif = [get_frame()]
+    width, height = gif[0].size
     fps = 0
     t_end = time.time() + gifDuration
     # while success and len(gif) < 25:
-    while success and time.time() < t_end:
-        prev_frame_time = time.time()
-        success, image_inner = cap.read()
-        new_frame_time = time.time()
-        gif.append(process_frame(image_inner, width, height))
-        fps = 1 / (new_frame_time - prev_frame_time)
-
-    cap.release()
-    cv2.destroyAllWindows()
+    while time.time() < t_end:
+        frame_time = time.time()
+        gif.append(get_frame())
+        fps = 1 / (time.time() - frame_time)
 
     bio = BytesIO()
     bio.name = 'image.gif'
@@ -174,51 +190,6 @@ def get_gif(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(get_status())
     if debug:
         update.message.reply_text(f"measured fps is {fps}", disable_notification=True)
-
-
-def process_video_frame(frame):
-    if flipVertically and flipHorisontally:
-        frame = cv2.flip(frame, -1)
-    elif flipHorisontally:
-        frame = cv2.flip(frame, 1)
-    elif flipVertically:
-        frame = cv2.flip(frame, 0)
-
-    return frame
-
-
-def get_video(update: Update, context: CallbackContext) -> None:
-    url = f"http://{cameraHost}/?action=stream"
-    cap = cv2.VideoCapture(url)
-    success, frame = cap.read()
-
-    height, width, channels = frame.shape
-    fps_video = cap.get(cv2.CAP_PROP_FPS)
-    fps = 10
-    filepath = os.path.join('/tmp/', 'video.mp4')
-    out = cv2.VideoWriter(filepath, fourcc=cv2.VideoWriter_fourcc(*'mp4v'), fps=fps_video, frameSize=(width, height))
-    t_end = time.time() + gifDuration * 2
-    while success and time.time() < t_end:
-        prev_frame_time = time.time()
-        success, frame_inner = cap.read()
-        out.write(process_video_frame(frame_inner))
-        fps = 1 / (time.time() - prev_frame_time)
-
-    cap.release()
-    out.set(cv2.CAP_PROP_FPS, fps)
-    out.release()
-    cv2.destroyAllWindows()
-
-    bio = BytesIO()
-    bio.name = 'video.mp4'
-    with open(filepath, 'rb') as fh:
-        bio.write(fh.read())
-
-    os.remove(filepath)
-    bio.seek(0)
-    update.message.reply_video(video=bio, width=width, height=height)
-    if debug:
-        update.message.reply_text(f"measured fps is {fps}, video fps {fps_video}", disable_notification=True)
 
 
 def manage_printing(command: str) -> None:
