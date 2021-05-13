@@ -73,7 +73,7 @@ last_notify_heigth: int = 0
 last_notify_percent: int = 0
 last_timelapse_heigth: float = 0.2
 last_message: str
-
+honeypot: bool = True
 
 # Define a few command handlers. These usually take the two arguments update and
 # context. Error handlers also receive the raised TelegramError object in error.
@@ -86,7 +86,7 @@ def checkAuthorized(update: Update):
     return True
     
 def help_command(update: Update, context: CallbackContext) -> None:
-    if not checkAuthorized(update):
+    if not checkAuthorized(update) and not honeypot:
         return
     update.message.reply_text('The following commands are known:\n\n'
                               '/status - send klipper status\n'
@@ -102,7 +102,7 @@ def help_command(update: Update, context: CallbackContext) -> None:
 
 
 def echo(update: Update, _: CallbackContext) -> None:
-    if not checkAuthorized(update):
+    if not checkAuthorized(update) and not honeypot:
         return
     update.message.reply_text(f"unknown command: {update.message.text}")
 
@@ -163,7 +163,7 @@ def get_light_status() -> str:
 
 
 def status(update: Update, _: CallbackContext) -> None:
-    if not checkAuthorized(update):
+    if not checkAuthorized(update) and not honeypot:
         return
     message_to_reply = update.message if update.message else update.effective_message
 
@@ -204,6 +204,20 @@ def take_photo() -> BytesIO:
     bio.seek(0)
     return bio
 
+def take_fake_photo() -> BytesIO:
+    cap = cv2.VideoCapture(cameraHost)
+    success, image = cap.read()
+
+    img = Image.open(random.choice(glob.glob(f'{klipper_config_path}/imgs/*.jpg')))
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    bio = BytesIO()
+    bio.name = 'status.jpeg'
+    img.save(bio, 'JPEG')
+    bio.seek(0)
+    return bio
 
 def take_lapse_photo():
     if not timelapse_enabled or not klippy_printing_filename:
@@ -263,12 +277,15 @@ def process_frame(frame, width, height) -> Image:
 
 
 def get_photo(update: Update, context: CallbackContext) -> None:
-    if not checkAuthorized(update):
+    if not checkAuthorized(update) and not honeypot:
         return
     message_to_reply = update.message if update.message else update.effective_message
 
     message_to_reply.bot.send_chat_action(chat_id=chatId, action=ChatAction.UPLOAD_PHOTO)
-    message_to_reply.reply_photo(photo=take_photo())
+    if not int(update.message.chat.id) == int(chatId):
+        message_to_reply.reply_photo(photo=take_fake_photo())
+    else:
+        message_to_reply.reply_photo(photo=take_photo())
 
 
 def get_gif(update: Update, context: CallbackContext) -> None:
@@ -576,7 +593,7 @@ def start_bot(token):
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
 
-    dispatcher.add_handler(MessageHandler(~Filters.chat(chatId), unknownChat))
+#    dispatcher.add_handler(MessageHandler(~Filters.chat(chatId), unknownChat))
     # on different commands - answer in Telegram
     dispatcher.add_handler(CommandHandler('start', start))
     dispatcher.add_handler(CallbackQueryHandler(button))
