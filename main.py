@@ -289,48 +289,54 @@ def get_photo(update: Update, context: CallbackContext) -> None:
 
 
 def get_gif(update: Update, context: CallbackContext) -> None:
-    if not checkAuthorized(update):
+    if not checkAuthorized(update) and not honeypot:
         return
     message_to_reply = update.message if update.message else update.effective_message
     if not cameraEnabled:
         message_to_reply.reply_text("camera is disabled")
         return
     message_to_reply.bot.send_chat_action(chat_id=chatId, action=ChatAction.RECORD_VIDEO)
-    gif = []
-    cap = cv2.VideoCapture(cameraHost)
-    success, image = cap.read()
-
-    if not success:
-        message_to_reply.reply_text("camera connection failed!")
-        return
-
-    height, width, channels = image.shape
-    gif.append(process_frame(image, width, height))
-
-    fps = 0
-    t_end = time.time() + gifDuration
-    # TOdo: calc frame count
-    while success and time.time() < t_end:
-        prev_frame_time = time.time()
-        success, image_inner = cap.read()
-        new_frame_time = time.time()
-        gif.append(process_frame(image_inner, width, height))
-        fps = 1 / (new_frame_time - prev_frame_time)
-
-    cap.release()
-    cv2.destroyAllWindows()
+    if not honeypot:
+        gif = []
+        cap = cv2.VideoCapture(cameraHost)
+        success, image = cap.read()
+    
+        if not success:
+            message_to_reply.reply_text("camera connection failed!")
+            return
+    
+        height, width, channels = image.shape
+        gif.append(process_frame(image, width, height))
+    
+        fps = 0
+        t_end = time.time() + gifDuration
+        # TOdo: calc frame count
+        while success and time.time() < t_end:
+            prev_frame_time = time.time()
+            success, image_inner = cap.read()
+            new_frame_time = time.time()
+            gif.append(process_frame(image_inner, width, height))
+            fps = 1 / (new_frame_time - prev_frame_time)
+    
+        cap.release()
+        cv2.destroyAllWindows()
 
     message_to_reply.bot.send_chat_action(chat_id=chatId, action=ChatAction.UPLOAD_VIDEO)
 
-    bio = BytesIO()
-    bio.name = 'image.gif'
-    gif[0].save(bio, format='GIF', save_all=True, optimize=True, append_images=gif[1:], duration=int(1000 / int(fps)),
-                loop=0)
-    bio.seek(0)
-    message_to_reply.reply_animation(animation=bio, width=width, height=height, timeout=60, disable_notification=True,
-                                     caption=get_status())
+    if not honeypot:
+        bio = BytesIO()
+        bio.name = 'image.gif'
+        gif[0].save(bio, format='GIF', save_all=True, optimize=True, append_images=gif[1:], duration=int(1000 / int(fps)),
+                    loop=0)
+        bio.seek(0)
+        message_to_reply.reply_animation(animation=bio, width=width, height=height, timeout=60, disable_notification=True,
+                                         caption=get_status())
+    else:
+        message_to_reply.reply_animation(animation=request.urlopen('https://www.reactiongifs.us/wp-content/uploads/2019/02/Computer-Old-People.gif').read(),  width=622, height=350, timeout=60, disable_notification=True,
+                                         caption=get_status())
 
-    if debug:
+
+    if debug and not honeypot:
         message_to_reply.reply_text(f"measured fps is {fps}", disable_notification=True)
 
 
@@ -346,7 +352,7 @@ def process_video_frame(frame):
 
 
 def get_video(update: Update, context: CallbackContext) -> None:
-    if not checkAuthorized(update):
+    if not checkAuthorized(update) and not honeypot:
         return
     message_to_reply = update.message if update.message else update.effective_message
     if not cameraEnabled:
@@ -354,41 +360,48 @@ def get_video(update: Update, context: CallbackContext) -> None:
         return
 
     message_to_reply.bot.send_chat_action(chat_id=chatId, action=ChatAction.RECORD_VIDEO)
-    cap = cv2.VideoCapture(cameraHost)
-    success, frame = cap.read()
+    if not honeypot:
+        cap = cv2.VideoCapture(cameraHost)
+        success, frame = cap.read()
+    else:
+        success = True
 
     if not success:
         message_to_reply.reply_text("camera connection failed!")
         return
 
-    height, width, channels = frame.shape
-    fps_video = cap.get(cv2.CAP_PROP_FPS)
-    fps = 10
-    filepath = os.path.join('/tmp/', 'video.mp4')
-    out = cv2.VideoWriter(filepath, fourcc=cv2.VideoWriter_fourcc(*'x264'), fps=fps_video, frameSize=(width, height))
-    t_end = time.time() + gifDuration * 2
-    while success and time.time() < t_end:
-        prev_frame_time = time.time()
-        success, frame_inner = cap.read()
-        out.write(process_video_frame(frame_inner))
-        fps = 1 / (time.time() - prev_frame_time)
-
-    cap.release()
-    out.set(cv2.CAP_PROP_FPS, fps)
-    out.release()
-    cv2.destroyAllWindows()
-
-    message_to_reply.bot.send_chat_action(chat_id=chatId, action=ChatAction.UPLOAD_VIDEO)
+    if not honeypot:
+        height, width, channels = frame.shape
+        fps_video = cap.get(cv2.CAP_PROP_FPS)
+        fps = 10
+        filepath = os.path.join('/tmp/', 'video.mp4')
+        out = cv2.VideoWriter(filepath, fourcc=cv2.VideoWriter_fourcc(*'x264'), fps=fps_video, frameSize=(width, height))
+        t_end = time.time() + gifDuration * 2
+        while success and time.time() < t_end:
+            prev_frame_time = time.time()
+            success, frame_inner = cap.read()
+            out.write(process_video_frame(frame_inner))
+            fps = 1 / (time.time() - prev_frame_time)
+    
+        cap.release()
+        out.set(cv2.CAP_PROP_FPS, fps)
+        out.release()
+        cv2.destroyAllWindows()
+    else:
+        filepath = f'{klipper_config_path}/imgs/rickroll.mp4'
+        width = 800
+        height = 600
 
     bio = BytesIO()
     bio.name = 'video.mp4'
     with open(filepath, 'rb') as fh:
         bio.write(fh.read())
 
-    os.remove(filepath)
+    if not honeypot:
+        os.remove(filepath)
     bio.seek(0)
     message_to_reply.reply_video(video=bio, width=width, height=height)
-    if debug:
+    if debug and not honeypot:
         message_to_reply.reply_text(f"measured fps is {fps}, video fps {fps_video}", disable_notification=True)
 
 
